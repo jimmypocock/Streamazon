@@ -213,9 +213,11 @@ Alternatively, use the provided start/stop scripts or set up Lambda functions fo
 
 ### Cost Data Latency
 
-- **Cost Explorer**: 1-24 hours delayed (most granular: hourly)
+- **Cost Explorer**: 1-24 hours delayed (most granular: daily by default)
 - **Usage Metrics**: Near real-time via CloudWatch (5-minute granularity)
 - **Strategy**: We combine both to provide the most current view possible
+
+**Note**: Hourly cost granularity requires opt-in from the AWS management (payer) account. By default, the tool uses daily granularity which is available to all accounts.
 
 ### Time Ranges
 

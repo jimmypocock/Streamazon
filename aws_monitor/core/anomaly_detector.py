@@ -4,11 +4,13 @@ Uses statistical methods to identify anomalies
 """
 
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .aws_client import AWSClient
 import numpy as np
 from collections import defaultdict
 import logging
-from scipy import stats
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +18,7 @@ logger = logging.getLogger(__name__)
 class AnomalyDetector:
     """Detects anomalies in AWS costs and usage patterns."""
 
-    def __init__(self, aws_client, threshold_multiplier: float = 2.0):
+    def __init__(self, aws_client: 'AWSClient', threshold_multiplier: float = 2.0) -> None:
         """
         Initialize anomaly detector.
 
@@ -27,9 +29,9 @@ class AnomalyDetector:
         self.aws_client = aws_client
         self.threshold_multiplier = threshold_multiplier
 
-    def detect_all_anomalies(self,
-                           lookback_hours: int = 168,
-                           sensitivity: str = 'medium') -> Dict[str, List[Dict[str, Any]]]:
+    def detect_all_anomalies(
+        self, lookback_hours: int = 168, sensitivity: str = "medium"
+    ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Detect all types of anomalies across costs and usage.
 
@@ -41,28 +43,24 @@ class AnomalyDetector:
             Dictionary with different types of anomalies
         """
         # Set threshold based on sensitivity
-        sensitivity_map = {
-            'low': 3.0,
-            'medium': 2.0,
-            'high': 1.5
-        }
+        sensitivity_map = {"low": 3.0, "medium": 2.0, "high": 1.5}
         self.threshold_multiplier = sensitivity_map.get(sensitivity, 2.0)
 
         anomalies = {
-            'cost_anomalies': self.detect_cost_anomalies(lookback_hours),
-            'usage_anomalies': self.detect_usage_anomalies(lookback_hours),
-            'new_resources': self.detect_new_resources(lookback_hours),
-            'stopped_resources': self.detect_stopped_resources(lookback_hours),
-            'pattern_changes': self.detect_pattern_changes(lookback_hours)
+            "cost_anomalies": self.detect_cost_anomalies(lookback_hours),
+            "usage_anomalies": self.detect_usage_anomalies(lookback_hours),
+            "new_resources": self.detect_new_resources(lookback_hours),
+            "stopped_resources": self.detect_stopped_resources(lookback_hours),
+            "pattern_changes": self.detect_pattern_changes(lookback_hours),
         }
 
         # Calculate overall severity score
         total_anomalies = sum(len(v) for v in anomalies.values())
 
-        anomalies['summary'] = {
-            'total_anomalies': total_anomalies,
-            'severity_score': self._calculate_severity_score(anomalies),
-            'recommended_actions': self._get_recommended_actions(anomalies)
+        anomalies["summary"] = {
+            "total_anomalies": total_anomalies,
+            "severity_score": self._calculate_severity_score(anomalies),
+            "recommended_actions": self._get_recommended_actions(anomalies),
         }
 
         return anomalies
@@ -87,37 +85,34 @@ class AnomalyDetector:
             response = self.aws_client.get_cost_and_usage(
                 start_date=start_date,
                 end_date=end_date,
-                granularity='HOURLY' if lookback_hours <= 48 else 'DAILY',
+                granularity="DAILY",  # Always use DAILY for compatibility
                 group_by=[
-                    {'Type': 'DIMENSION', 'Key': 'SERVICE'},
-                    {'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}
-                ]
+                    {"Type": "DIMENSION", "Key": "SERVICE"},
+                    {"Type": "DIMENSION", "Key": "LINKED_ACCOUNT"},
+                ],
             )
 
             # Process data by service and account
             time_series_data = defaultdict(list)
 
-            for result in response.get('ResultsByTime', []):
-                timestamp = result['TimePeriod']['Start']
+            for result in response.get("ResultsByTime", []):
+                timestamp = result["TimePeriod"]["Start"]
 
-                for group in result.get('Groups', []):
-                    service = group['Keys'][0]
-                    account_id = group['Keys'][1]
-                    cost = float(group['Metrics']['UnblendedCost']['Amount'])
+                for group in result.get("Groups", []):
+                    service = group["Keys"][0]
+                    account_id = group["Keys"][1]
+                    cost = float(group["Metrics"]["UnblendedCost"]["Amount"])
 
                     key = f"{service}:{account_id}"
-                    time_series_data[key].append({
-                        'timestamp': timestamp,
-                        'cost': cost
-                    })
+                    time_series_data[key].append({"timestamp": timestamp, "cost": cost})
 
             # Analyze each service/account combination
             for key, data_points in time_series_data.items():
                 if len(data_points) < 10:  # Need minimum data points
                     continue
 
-                service, account_id = key.split(':')
-                costs = [dp['cost'] for dp in data_points]
+                service, account_id = key.split(":")
+                costs = [dp["cost"] for dp in data_points]
 
                 # Calculate statistics
                 mean_cost = np.mean(costs)
@@ -138,24 +133,37 @@ class AnomalyDetector:
                         baseline = mean_cost if mean_cost > 0 else 1
                         change_pct = ((cost - mean_cost) / baseline) * 100
 
-                        anomalies.append({
-                            'type': 'cost_spike' if z_score > 0 else 'cost_drop',
-                            'service': service,
-                            'account_id': account_id,
-                            'timestamp': data_points[-(recent_hours-i)]['timestamp'],
-                            'cost': cost,
-                            'baseline_cost': mean_cost,
-                            'z_score': z_score,
-                            'change_percentage': change_pct,
-                            'severity': self._calculate_anomaly_severity(z_score, change_pct),
-                            'confidence': self._calculate_confidence(len(costs), std_cost)
-                        })
+                        anomalies.append(
+                            {
+                                "type": "cost_spike" if z_score > 0 else "cost_drop",
+                                "service": service,
+                                "account_id": account_id,
+                                "timestamp": data_points[-(recent_hours - i)]["timestamp"],
+                                "cost": cost,
+                                "baseline_cost": mean_cost,
+                                "z_score": z_score,
+                                "change_percentage": change_pct,
+                                "severity": self._calculate_anomaly_severity(
+                                    z_score, change_pct
+                                ),
+                                "confidence": self._calculate_confidence(
+                                    len(costs), std_cost
+                                ),
+                            }
+                        )
 
             # Sort by severity and recency
-            anomalies.sort(key=lambda x: (
-                0 if x['severity'] == 'critical' else 1 if x['severity'] == 'high' else 2,
-                -abs(x['z_score'])
-            ))
+            anomalies.sort(
+                key=lambda x: (
+                    (
+                        0
+                        if x["severity"] == "critical"
+                        else 1 if x["severity"] == "high"
+                        else 2
+                    ),
+                    -abs(x["z_score"]),
+                )
+            )
 
             # Limit to top anomalies
             return anomalies[:20]
@@ -178,15 +186,15 @@ class AnomalyDetector:
 
         # Services and metrics to check
         service_metrics = {
-            'EC2': ['CPUUtilization', 'NetworkIn', 'NetworkOut'],
-            'Lambda': ['Invocations', 'Errors', 'Duration'],
-            'RDS': ['CPUUtilization', 'DatabaseConnections']
+            "EC2": ["CPUUtilization", "NetworkIn", "NetworkOut"],
+            "Lambda": ["Invocations", "Errors", "Duration"],
+            "RDS": ["CPUUtilization", "DatabaseConnections"],
         }
 
         try:
             # Get current account list
             accounts = self.aws_client.get_organization_accounts()
-            account_ids = [acc['Id'] for acc in accounts][:5]  # Limit for performance
+            account_ids = [acc["Id"] for acc in accounts][:5]  # Limit for performance
 
             for service, metrics in service_metrics.items():
                 for metric in metrics:
@@ -198,10 +206,16 @@ class AnomalyDetector:
                             anomalies.append(anomaly)
 
             # Sort by severity
-            anomalies.sort(key=lambda x: (
-                0 if x.get('severity') == 'critical' else 1 if x.get('severity') == 'high' else 2,
-                -abs(x.get('deviation', 0))
-            ))
+            anomalies.sort(
+                key=lambda x: (
+                    (
+                        0
+                        if x.get("severity") == "critical"
+                        else 1 if x.get("severity") == "high" else 2
+                    ),
+                    -abs(x.get("deviation", 0)),
+                )
+            )
 
             return anomalies[:15]
 
@@ -209,22 +223,16 @@ class AnomalyDetector:
             logger.error(f"Error detecting usage anomalies: {e}")
             return []
 
-    def _check_metric_anomaly(self,
-                            service: str,
-                            account_id: str,
-                            metric: str,
-                            lookback_hours: int) -> Optional[Dict[str, Any]]:
+    def _check_metric_anomaly(
+        self, service: str, account_id: str, metric: str, lookback_hours: int
+    ) -> Optional[Dict[str, Any]]:
         """Check a specific metric for anomalies."""
         try:
             end_time = datetime.now()
             start_time = end_time - timedelta(hours=lookback_hours)
 
             # Get metric namespace
-            namespace_map = {
-                'EC2': 'AWS/EC2',
-                'Lambda': 'AWS/Lambda',
-                'RDS': 'AWS/RDS'
-            }
+            namespace_map = {"EC2": "AWS/EC2", "Lambda": "AWS/Lambda", "RDS": "AWS/RDS"}
 
             namespace = namespace_map.get(service)
             if not namespace:
@@ -237,18 +245,18 @@ class AnomalyDetector:
                 StartTime=start_time,
                 EndTime=end_time,
                 Period=3600,  # 1 hour
-                Statistics=['Average', 'Maximum']
+                Statistics=["Average", "Maximum"],
             )
 
-            datapoints = response.get('Datapoints', [])
+            datapoints = response.get("Datapoints", [])
             if len(datapoints) < 10:
                 return None
 
             # Sort by timestamp
-            datapoints.sort(key=lambda x: x['Timestamp'])
+            datapoints.sort(key=lambda x: x["Timestamp"])
 
             # Extract values
-            values = [dp['Average'] for dp in datapoints]
+            values = [dp["Average"] for dp in datapoints]
 
             # Calculate statistics
             mean_val = np.mean(values)
@@ -263,16 +271,19 @@ class AnomalyDetector:
 
             if abs(z_score) > self.threshold_multiplier:
                 return {
-                    'type': 'usage_anomaly',
-                    'service': service,
-                    'account_id': account_id,
-                    'metric': metric,
-                    'current_value': recent_value,
-                    'baseline_value': mean_val,
-                    'deviation': z_score,
-                    'timestamp': datapoints[-1]['Timestamp'].isoformat(),
-                    'severity': self._calculate_anomaly_severity(z_score, 0),
-                    'description': f"{metric} for {service} is {z_score:.1f} standard deviations from normal"
+                    "type": "usage_anomaly",
+                    "service": service,
+                    "account_id": account_id,
+                    "metric": metric,
+                    "current_value": recent_value,
+                    "baseline_value": mean_val,
+                    "deviation": z_score,
+                    "timestamp": datapoints[-1]["Timestamp"].isoformat(),
+                    "severity": self._calculate_anomaly_severity(z_score, 0),
+                    "description": (
+                        f"{metric} for {service} is {z_score:.1f} "
+                        f"standard deviations from normal"
+                    ),
                 }
 
             return None
@@ -303,22 +314,22 @@ class AnomalyDetector:
             recent_response = self.aws_client.get_cost_and_usage(
                 start_date=recent_start,
                 end_date=end_date,
-                granularity='DAILY',
+                granularity="DAILY",
                 group_by=[
-                    {'Type': 'DIMENSION', 'Key': 'SERVICE'},
-                    {'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}
-                ]
+                    {"Type": "DIMENSION", "Key": "SERVICE"},
+                    {"Type": "DIMENSION", "Key": "LINKED_ACCOUNT"},
+                ],
             )
 
             # Get baseline costs
             baseline_response = self.aws_client.get_cost_and_usage(
                 start_date=baseline_start,
                 end_date=recent_start,
-                granularity='DAILY',
+                granularity="DAILY",
                 group_by=[
-                    {'Type': 'DIMENSION', 'Key': 'SERVICE'},
-                    {'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}
-                ]
+                    {"Type": "DIMENSION", "Key": "SERVICE"},
+                    {"Type": "DIMENSION", "Key": "LINKED_ACCOUNT"},
+                ],
             )
 
             # Extract service/account combinations
@@ -326,15 +337,15 @@ class AnomalyDetector:
             baseline_services = set()
             recent_costs = {}
 
-            for result in recent_response.get('ResultsByTime', []):
-                for group in result.get('Groups', []):
+            for result in recent_response.get("ResultsByTime", []):
+                for group in result.get("Groups", []):
                     key = f"{group['Keys'][0]}:{group['Keys'][1]}"
                     recent_services.add(key)
-                    cost = float(group['Metrics']['UnblendedCost']['Amount'])
+                    cost = float(group["Metrics"]["UnblendedCost"]["Amount"])
                     recent_costs[key] = recent_costs.get(key, 0) + cost
 
-            for result in baseline_response.get('ResultsByTime', []):
-                for group in result.get('Groups', []):
+            for result in baseline_response.get("ResultsByTime", []):
+                for group in result.get("Groups", []):
                     key = f"{group['Keys'][0]}:{group['Keys'][1]}"
                     baseline_services.add(key)
 
@@ -342,23 +353,28 @@ class AnomalyDetector:
             new_service_keys = recent_services - baseline_services
 
             for key in new_service_keys:
-                service, account_id = key.split(':')
+                service, account_id = key.split(":")
                 cost = recent_costs.get(key, 0)
 
                 if cost > 1:  # Ignore tiny costs
-                    new_resources.append({
-                        'type': 'new_service',
-                        'service': service,
-                        'account_id': account_id,
-                        'first_seen': recent_start.isoformat(),
-                        'cost_since_start': cost,
-                        'daily_rate': cost / (lookback_hours / 24),
-                        'severity': 'high' if cost > 100 else 'medium',
-                        'description': f"New service {service} detected in account {account_id}"
-                    })
+                    new_resources.append(
+                        {
+                            "type": "new_service",
+                            "service": service,
+                            "account_id": account_id,
+                            "first_seen": recent_start.isoformat(),
+                            "cost_since_start": cost,
+                            "daily_rate": cost / (lookback_hours / 24),
+                            "severity": "high" if cost > 100 else "medium",
+                            "description": (
+                                f"New service {service} detected in "
+                                f"account {account_id}"
+                            ),
+                        }
+                    )
 
             # Sort by cost
-            new_resources.sort(key=lambda x: x['cost_since_start'], reverse=True)
+            new_resources.sort(key=lambda x: x["cost_since_start"], reverse=True)
 
             return new_resources[:10]
 
@@ -388,38 +404,38 @@ class AnomalyDetector:
             baseline_response = self.aws_client.get_cost_and_usage(
                 start_date=baseline_start,
                 end_date=baseline_end,
-                granularity='DAILY',
+                granularity="DAILY",
                 group_by=[
-                    {'Type': 'DIMENSION', 'Key': 'SERVICE'},
-                    {'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}
-                ]
+                    {"Type": "DIMENSION", "Key": "SERVICE"},
+                    {"Type": "DIMENSION", "Key": "LINKED_ACCOUNT"},
+                ],
             )
 
             # Get recent costs
             recent_response = self.aws_client.get_cost_and_usage(
                 start_date=recent_start,
                 end_date=end_date,
-                granularity='DAILY',
+                granularity="DAILY",
                 group_by=[
-                    {'Type': 'DIMENSION', 'Key': 'SERVICE'},
-                    {'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}
-                ]
+                    {"Type": "DIMENSION", "Key": "SERVICE"},
+                    {"Type": "DIMENSION", "Key": "LINKED_ACCOUNT"},
+                ],
             )
 
             # Process responses
             baseline_costs = defaultdict(float)
             recent_costs = defaultdict(float)
 
-            for result in baseline_response.get('ResultsByTime', []):
-                for group in result.get('Groups', []):
+            for result in baseline_response.get("ResultsByTime", []):
+                for group in result.get("Groups", []):
                     key = f"{group['Keys'][0]}:{group['Keys'][1]}"
-                    cost = float(group['Metrics']['UnblendedCost']['Amount'])
+                    cost = float(group["Metrics"]["UnblendedCost"]["Amount"])
                     baseline_costs[key] += cost
 
-            for result in recent_response.get('ResultsByTime', []):
-                for group in result.get('Groups', []):
+            for result in recent_response.get("ResultsByTime", []):
+                for group in result.get("Groups", []):
                     key = f"{group['Keys'][0]}:{group['Keys'][1]}"
-                    cost = float(group['Metrics']['UnblendedCost']['Amount'])
+                    cost = float(group["Metrics"]["UnblendedCost"]["Amount"])
                     recent_costs[key] += cost
 
             # Find stopped services
@@ -427,21 +443,26 @@ class AnomalyDetector:
                 recent_cost = recent_costs.get(key, 0)
 
                 if baseline_cost > 10 and recent_cost < baseline_cost * 0.1:
-                    service, account_id = key.split(':')
+                    service, account_id = key.split(":")
 
-                    stopped_resources.append({
-                        'type': 'stopped_service',
-                        'service': service,
-                        'account_id': account_id,
-                        'baseline_daily_cost': baseline_cost / (lookback_hours / 24),
-                        'current_daily_cost': recent_cost,
-                        'savings': baseline_cost - recent_cost,
-                        'severity': 'info',
-                        'description': f"Service {service} appears to have stopped in account {account_id}"
-                    })
+                    stopped_resources.append(
+                        {
+                            "type": "stopped_service",
+                            "service": service,
+                            "account_id": account_id,
+                            "baseline_daily_cost": baseline_cost / (lookback_hours / 24),
+                            "current_daily_cost": recent_cost,
+                            "savings": baseline_cost - recent_cost,
+                            "severity": "info",
+                            "description": (
+                                f"Service {service} appears to have stopped in "
+                                f"account {account_id}"
+                            ),
+                        }
+                    )
 
             # Sort by savings
-            stopped_resources.sort(key=lambda x: x['savings'], reverse=True)
+            stopped_resources.sort(key=lambda x: x["savings"], reverse=True)
 
             return stopped_resources[:10]
 
@@ -466,7 +487,7 @@ class AnomalyDetector:
 
         try:
             # Check for services with changing usage patterns
-            services_to_check = ['EC2', 'Lambda', 'RDS']
+            services_to_check = ["EC2", "Lambda", "RDS"]
 
             for service in services_to_check:
                 # Get hourly data for pattern analysis
@@ -488,13 +509,13 @@ class AnomalyDetector:
         abs_change = abs(change_pct)
 
         if abs_z > 4 or abs_change > 100:
-            return 'critical'
+            return "critical"
         elif abs_z > 3 or abs_change > 50:
-            return 'high'
+            return "high"
         elif abs_z > 2 or abs_change > 25:
-            return 'medium'
+            return "medium"
         else:
-            return 'low'
+            return "low"
 
     def _calculate_confidence(self, sample_size: int, std_dev: float) -> float:
         """Calculate confidence score for anomaly detection."""
@@ -506,21 +527,15 @@ class AnomalyDetector:
 
     def _calculate_severity_score(self, anomalies: Dict[str, List]) -> float:
         """Calculate overall severity score from all anomalies."""
-        severity_weights = {
-            'critical': 10,
-            'high': 5,
-            'medium': 2,
-            'low': 1,
-            'info': 0.5
-        }
+        severity_weights = {"critical": 10, "high": 5, "medium": 2, "low": 1, "info": 0.5}
 
         total_score = 0
         for anomaly_type, anomaly_list in anomalies.items():
-            if anomaly_type == 'summary':
+            if anomaly_type == "summary":
                 continue
 
             for anomaly in anomaly_list:
-                severity = anomaly.get('severity', 'low')
+                severity = anomaly.get("severity", "low")
                 total_score += severity_weights.get(severity, 1)
 
         return round(total_score, 2)
@@ -531,27 +546,28 @@ class AnomalyDetector:
 
         # Check for critical anomalies
         critical_count = sum(
-            1 for anomaly_list in anomalies.values()
+            1
+            for anomaly_list in anomalies.values()
             if isinstance(anomaly_list, list)
             for anomaly in anomaly_list
-            if anomaly.get('severity') == 'critical'
+            if anomaly.get("severity") == "critical"
         )
 
         if critical_count > 0:
             actions.append(f"URGENT: Review {critical_count} critical anomalies immediately")
 
         # Check for cost spikes
-        cost_anomalies = anomalies.get('cost_anomalies', [])
-        if any(a['type'] == 'cost_spike' for a in cost_anomalies):
+        cost_anomalies = anomalies.get("cost_anomalies", [])
+        if any(a["type"] == "cost_spike" for a in cost_anomalies):
             actions.append("Review and investigate unexpected cost increases")
 
         # Check for new resources
-        new_resources = anomalies.get('new_resources', [])
+        new_resources = anomalies.get("new_resources", [])
         if new_resources:
             actions.append(f"Verify {len(new_resources)} newly detected services are authorized")
 
         # Check for usage anomalies
-        usage_anomalies = anomalies.get('usage_anomalies', [])
+        usage_anomalies = anomalies.get("usage_anomalies", [])
         if usage_anomalies:
             actions.append("Monitor resource usage patterns for potential issues")
 

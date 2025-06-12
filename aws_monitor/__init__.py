@@ -1,6 +1,8 @@
 """
 AWS Cost & Usage Monitor
-An open-source tool for monitoring AWS costs and resource usage across organizations.
+
+An open-source tool for monitoring AWS costs and resource usage across
+organizations.
 """
 
 __version__ = "1.0.0"
@@ -12,9 +14,4 @@ from .core.cost_analyzer import CostAnalyzer
 from .core.usage_tracker import UsageTracker
 from .core.anomaly_detector import AnomalyDetector
 
-__all__ = [
-    "AWSClient",
-    "CostAnalyzer",
-    "UsageTracker",
-    "AnomalyDetector"
-]
+__all__ = ["AWSClient", "CostAnalyzer", "UsageTracker", "AnomalyDetector"]
