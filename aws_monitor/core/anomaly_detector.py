@@ -81,11 +81,11 @@ class AnomalyDetector:
             end_date = datetime.now()
             start_date = end_date - timedelta(hours=lookback_hours)
 
-            # Get hourly cost data for more granular analysis
+            # Get daily cost data (free tier)
             response = self.aws_client.get_cost_and_usage(
                 start_date=start_date,
                 end_date=end_date,
-                granularity="DAILY",  # Always use DAILY for compatibility
+                granularity="DAILY",  # Free tier - no additional cost
                 group_by=[
                     {"Type": "DIMENSION", "Key": "SERVICE"},
                     {"Type": "DIMENSION", "Key": "LINKED_ACCOUNT"},

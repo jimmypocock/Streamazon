@@ -130,15 +130,9 @@ class AWSClient:
             ]
 
         try:
-            # Format dates based on granularity
-            if granularity == "HOURLY":
-                # For hourly, use full timestamp
-                start_str = start_date.strftime("%Y-%m-%dT%H:%M:%SZ")
-                end_str = end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
-            else:
-                # For daily/monthly, use date only
-                start_str = start_date.strftime("%Y-%m-%d")
-                end_str = end_date.strftime("%Y-%m-%d")
+            # Always use date format for free tier
+            start_str = start_date.strftime("%Y-%m-%d")
+            end_str = end_date.strftime("%Y-%m-%d")
             
             request = {
                 "TimePeriod": {

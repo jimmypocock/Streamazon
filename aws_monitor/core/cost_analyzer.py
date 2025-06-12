@@ -52,14 +52,9 @@ class CostAnalyzer:
             end_date = datetime.now()  # Include today's data for hourly view
 
         # Determine granularity based on time range
-        # Note: HOURLY granularity requires opt-in from payer account
-        # Using DAILY as default for better compatibility
-        if hours <= 24:
-            granularity = "DAILY"  # Changed from HOURLY for compatibility
-        elif hours <= 168:  # 7 days
-            granularity = "DAILY"
-        else:
-            granularity = "DAILY"
+        # Always use DAILY granularity (free tier)
+        # HOURLY requires paid opt-in ($80/month)
+        granularity = "DAILY"
 
         # Build group by dimensions
         group_by_dims = [{"Type": "DIMENSION", "Key": dim} for dim in group_by]

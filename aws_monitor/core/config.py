@@ -20,7 +20,7 @@ class AWSConfig:
     cross_account_role_name: str = "AWSCostMonitorCrossAccountRole"
     external_id: Optional[str] = None
     max_parallel_threads: int = 10
-    enable_hourly_granularity: bool = False  # Requires opt-in from payer account
+    # Note: Hourly granularity removed - requires $80/month paid feature
 
 
 @dataclass
